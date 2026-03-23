@@ -1,0 +1,64 @@
+---
+description: 进度跟踪规则 — 开始任何新步骤前必须核对
+alwaysApply: true
+---
+
+# 进度跟踪规则
+
+## 阶段总览
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 第一阶段 | 环境搭建与数据通路验证 | 已完成 |
+| 第二阶段 | czsc 上手与缠论分析 | 下一步 |
+| 第三阶段 | 策略开发（缠论+双龙） | 未开始 |
+| 第四阶段 | 回测验证 | 未开始 |
+| 第五阶段 | Agent 集成（OpenClaw） | 未开始 |
+| 第六阶段 | 优化与扩展 | 未开始 |
+
+> 注意：上表是静态快照，实际状态以 `docs/当前阶段.md` 为准，每次对话前必须读取该文件。
+
+## 当前待完成步骤（按顺序）
+
+### Step 2.1 — 克隆 czsc_skills 参考仓库
+- 命令：`git clone https://github.com/zengbin93/czsc_skills.git refs/czsc_skills`
+- 产出：`refs/czsc_skills/` 目录
+- 完成后：更新 `docs/当前阶段.md` Step 2.1 为已完成
+
+### Step 2.2 — czsc 缠论分析验证
+- 创建：`tests/test_czsc_analysis.py`
+- 内容：在真实 60 分钟数据上运行 CZSC 对象，验证分型/笔识别
+- 参考代码：`可执行步骤.md` Step 2.2 章节
+- 完成后：更新文档
+
+### Step 2.3 — 探索 czsc 内置信号
+- 创建：`tests/test_czsc_signals.py`
+- 内容：查看 czsc.signals 模块，了解可复用信号
+- 完成后：更新文档
+
+### Step 3.1 — 缠论信号模块
+- 创建：`strategy/chan_signals.py`
+- 类：`ChanSignalGenerator`
+- 方法：`analyze()` 返回三类买卖点信号
+
+### Step 3.2 — 双龙战法信号模块
+- 创建：`strategy/dragon_signals.py`
+- 类：`DragonSignalGenerator`
+- 指标：EMA5/EMA10 金叉 + MACD DIF/DEA 金叉
+
+### Step 3.3 — 信号融合引擎
+- 创建：`strategy/signal_engine.py`
+- 类：`SignalEngine`
+- 逻辑：缠论方向判断 + 双龙时机确认 = 综合信号
+
+### Step 4.1 — 回测引擎
+- 创建：`backtest/backtester.py`
+- 类：`Backtester`
+- 约束：T+1、手续费万三、印花税千一、滑点 0.1%
+
+## 步骤切换时必须做的事
+
+1. 开始新步骤前：读 `可执行步骤.md` 对应章节的完整代码模板
+2. 完成步骤后：
+   - 更新 `docs/已完成工作.md`（追加记录）
+   - 更新 `docs/当前阶段.md`（改状态 + 更新下一步行动 + 更新时间）

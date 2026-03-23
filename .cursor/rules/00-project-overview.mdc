@@ -1,0 +1,62 @@
+---
+description: QStock 项目总览规则 — 每次对话开始时必须阅读
+alwaysApply: true
+---
+
+# QStock 项目背景（必读）
+
+## 项目定位
+
+基于 **OpenClaw（小龙虾）** AI Agent 平台，结合 **缠论 + 双龙战法**，构建 A 股 60 分钟级别量化交易信号系统。
+
+## 核心技术栈
+
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| 数据 | Tushare + czsc ts_connector | czsc 内置连接器，已修复两个 bug |
+| 缠论引擎 | czsc 库（CZSC 对象） | 分型/笔/线段/中枢识别 |
+| 技术指标 | pandas_ta | 双龙战法：EMA + MACD |
+| Agent 平台 | JVS Claw（阿里云无影 OpenClaw） | 定时任务 + 信号推送 |
+| 语言 | Python 3.10+，PowerShell（Windows） |
+
+## 关键约束
+
+- A 股 **T+1 交易制度**：买入当天不能卖出，回测和策略必须遵守
+- 数据方案：**方案A**（已确认）— 全部使用 czsc 内置 ts_connector + Tushare，不用 baostock/akshare
+- czsc 存在两个已知 bug，已在 `core/data_provider.py` 中绕过，**不要直接调用 czsc 原生 get_raw_bars**
+
+## 项目目录结构
+
+```
+QStock/
+├── core/
+│   └── data_provider.py       ← 统一数据接口（含 freq bug 修复，必须通过此模块取数）
+├── strategy/
+│   ├── chan_signals.py         ← 缠论买卖点信号（待开发）
+│   ├── dragon_signals.py      ← 双龙战法信号（待开发）
+│   └── signal_engine.py       ← 信号融合引擎（待开发）
+├── backtest/
+│   └── backtester.py          ← 回测引擎（待开发）
+├── scripts/
+│   ├── analyze.py             ← 单股分析脚本（待开发）
+│   └── scan.py                ← 市场扫描脚本（待开发）
+├── tests/
+│   ├── test_tushare_access.py ← Step 1.2 已验证
+│   └── test_czsc_60min.py     ← Step 1.3 已验证
+├── docs/
+│   ├── 当前阶段.md            ← 阶段进度跟踪
+│   └── 已完成工作.md          ← 历史工作记录
+├── refs/
+│   └── czsc_skills/           ← czsc_skills 参考仓库（待克隆）
+└── 可执行步骤.md              ← 完整技术路线手册
+```
+
+## 文档导航
+
+| 文档 | 用途 | 何时阅读 |
+|------|------|----------|
+| `docs/当前阶段.md` | 当前所在阶段和步骤 | 每次对话必读 |
+| `docs/已完成工作.md` | 已完成工作详细记录 | 了解历史决策时读 |
+| `可执行步骤.md` | 完整技术路线和代码模板 | 开始新步骤前读 |
+| `导师需求.md` | 导师原始需求 | 评估方向时读 |
+| `项目分析报告.md` | 技术选型分析 | 技术决策时读 |

@@ -1,0 +1,105 @@
+---
+description: 编码规范 — 涉及代码编写时应用
+globs: ["**/*.py"]
+---
+
+# QStock 编码规范
+
+## 数据获取规范
+
+```python
+# 正确：通过统一接口获取数据
+from core.data_provider import get_raw_bars
+from czsc import Freq
+
+bars = get_raw_bars("600519.SH#E", Freq.F60, "20250901", "20260319")
+
+# 错误：直接调用 czsc 底层（有已知 bug，禁止使用）
+# from czsc.connectors.ts_connector import get_raw_bars
+```
+
+## symbol 格式规范
+
+| 场景 | 格式 | 示例 |
+|------|------|------|
+| 调用 `core.data_provider.get_raw_bars()` | `ts_code#asset` | `600519.SH#E` |
+| 股票（E=Equity） | `XXXXXX.SH#E` 或 `XXXXXX.SZ#E` | `000001.SZ#E` |
+| 指数（I=Index） | `XXXXXX.SH#I` | `000300.SH#I` |
+
+## Freq 使用规范
+
+```python
+# 始终使用 czsc.Freq 枚举，不要用字符串
+from czsc import Freq
+Freq.F60   # 60分钟
+Freq.F30   # 30分钟
+Freq.D     # 日线
+
+# 禁止用字符串代替枚举（会触发 czsc 已知 bug）
+# "60分钟"  # 禁止
+# "60min"   # 禁止
+```
+
+## 回测必须包含的约束
+
+```python
+# T+1 约束：买入当天不能卖出
+# 示例检查逻辑：
+import pandas as pd
+
+if signal == 'SELL' and position > 0:
+    current_date = pd.Timestamp(row['datetime']).date()
+    if buy_date is not None and current_date <= buy_date:
+        continue  # T+1 限制，当天不能卖
+```
+
+## 新建文件规范
+
+- `core/` 下的模块：数据层，不包含策略逻辑
+- `strategy/` 下的模块：信号计算，不包含数据获取逻辑
+- `backtest/` 下的模块：回测引擎，依赖 strategy 但不直接调用 core
+- `scripts/` 下的脚本：入口脚本，可以调用所有层
+- `tests/` 下的脚本：验证脚本，独立运行，有完整输出
+
+## 测试脚本规范
+
+每个测试脚本必须包含：
+1. 顶部 docstring 说明测试目的
+2. 分段打印（`print("=" * 50)` 分隔）
+3. 明确的成功/失败判断输出
+4. 数据量和时间范围的打印确认
+
+## 运行脚本规范（Windows PowerShell）
+
+在 PowerShell 中运行项目脚本，**必须**使用以下两种方式之一：
+
+**方式一（推荐）：直接指定 venv 解释器路径，无需激活**
+```powershell
+# 在项目根目录执行，不需要先 Activate
+.\venv\Scripts\python.exe tests/test_czsc_analysis.py
+```
+
+**方式二：先激活，再运行（两条独立命令）**
+```powershell
+.\venv\Scripts\Activate.ps1
+python tests/test_czsc_analysis.py
+```
+
+**禁止行为**：
+- 禁止用 `&&` 连接命令（PowerShell 5.x 不支持 `&&`，会报语法错误）
+- 禁止在同一行用 `;` 拼接激活和运行（`Activate.ps1 ; python ...` 在部分环境下环境变量未生效）
+- 推荐始终用方式一（直接路径），避免激活顺序问题
+
+**PYTHONPATH 设置**（脚本中无 sys.path 时需要）：
+```powershell
+$env:PYTHONPATH = 'c:\Users\86136\Desktop\实习\QStock'
+.\venv\Scripts\python.exe tests/test_czsc_analysis.py
+```
+
+## 已知 czsc Bug 备忘
+
+| Bug | 现象 | 解决方案 |
+|-----|------|----------|
+| freq 枚举 bug | `Freq("60min")` 报错，枚举值是 `"60分钟"` | 用 `str(freq)` 匹配，不用 dict 映射 |
+| 列名不匹配 bug | `pro_bar_minutes` 输出 `symbol/dt` 列，但 `format_kline` 期望 `ts_code/trade_time` | 直接手动构造 RawBar，不走 `format_kline` |
+| Freq 不可哈希 | czsc 的 `Freq` 来自 Rust 扩展 `rs_czsc`，不能用作 dict key | 改用 `str(freq)` 作为 key |

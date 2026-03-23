@@ -1,0 +1,31 @@
+---
+description: 回答前必须阅读的文档清单与阅读规则
+alwaysApply: true
+---
+
+# 回答前必读规则
+
+## 每次对话必须执行的操作
+
+1. **读取当前进度**：阅读 `docs/当前阶段.md`，确认当前所处阶段和步骤
+2. **了解背景**：`00-project-overview.mdc` 已通过 alwaysApply 加载，无需额外读取
+
+## 按场景按需阅读
+
+| 用户询问内容 | 必须先读的文档 |
+|-------------|---------------|
+| 「下一步做什么」「接下来怎么办」 | `docs/当前阶段.md` + `可执行步骤.md` 对应章节 |
+| 涉及数据获取、K线、RawBar | `core/data_provider.py`（了解现有实现，避免重复造轮子）|
+| 涉及缠论信号、买卖点 | `strategy/chan_signals.py`（如存在）+ `可执行步骤.md` Step 3.1 |
+| 涉及双龙战法、EMA、MACD | `strategy/dragon_signals.py`（如存在）+ `可执行步骤.md` Step 3.2 |
+| 涉及回测 | `backtest/backtester.py`（如存在）+ `可执行步骤.md` Step 4.1 |
+| 涉及 bug 修复、czsc 问题 | `docs/已完成工作.md`（查看历史 bug 记录）|
+| 涉及 Agent、OpenClaw、Skill | `项目分析报告.md` 第五章 + `可执行步骤.md` 第五阶段 |
+| 创建新文件 | 先用 LS 确认目录存在，再检查同目录下有无同类文件 |
+
+## 禁止行为
+
+- 禁止在未阅读 `core/data_provider.py` 的情况下编写任何数据获取代码
+- 禁止直接调用 `czsc.connectors.ts_connector.get_raw_bars()`，必须通过 `core.data_provider.get_raw_bars()`
+- 禁止在回测逻辑中忽略 T+1 约束
+- 禁止凭记忆假设文件内容，必须用工具实际读取

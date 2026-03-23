@@ -1,0 +1,5 @@
+czsc>=0.10.12
+tushare>=1.4.25
+pandas_ta>=0.4.71b0
+baostock
+akshare

@@ -1,0 +1,115 @@
+---
+description: czsc 库关键知识 — 涉及缠论代码时加载
+globs: ["**/strategy/**", "**/tests/**", "**/core/**"]
+---
+
+# czsc 库关键知识备忘
+
+## CZSC 核心对象
+
+```python
+from czsc import CZSC, RawBar, Freq
+
+# 创建 CZSC 对象（输入 RawBar 列表）
+c = CZSC(bars)  # bars: List[RawBar]
+
+# 核心属性
+c.bars_raw    # List[RawBar] 原始K线
+c.bars_ubi    # List[RawBar] 未完成笔的K线
+c.fx_list     # List[FX] 分型列表
+c.bi_list     # List[BI] 笔列表
+
+# 实盘逐根更新
+c.update(new_bar)  # 输入新的 RawBar
+```
+
+## 分型（FX）对象关键属性
+
+```python
+fx = c.fx_list[-1]
+fx.dt          # 分型时间
+fx.mark        # Mark.D（顶分型）或 Mark.G（底分型）
+fx.fx          # 分型价格（顶分型的最高点 or 底分型的最低点）
+fx.high        # 中间K线最高价
+fx.low         # 中间K线最低价
+
+# 判断分型类型
+# 注意：Mark.D = 顶分型（D = 顶 Dǐng），Mark.G = 底分型（G = 谷 Gǔ）
+# 经枚举 value 字符串直接确认：Mark.D.value='顶分型', Mark.G.value='底分型'
+from czsc.py.objects import Mark   # 注意：不是 czsc.objects，是 czsc.py.objects
+if fx.mark == Mark.D:   # 顶分型
+    pass
+if fx.mark == Mark.G:   # 底分型
+    pass
+```
+
+## 笔（BI）对象关键属性
+
+```python
+bi = c.bi_list[-1]
+bi.direction   # Direction.Up 或 Direction.Down
+bi.high        # 笔的最高价
+bi.low         # 笔的最低价
+bi.fx_a        # 起点分型（FX 对象）
+bi.fx_b        # 终点分型（FX 对象）
+bi.fx_a.dt     # 笔起点时间
+bi.fx_b.dt     # 笔终点时间
+
+# 判断方向
+# Direction 直接从 czsc 顶层导入，不是 czsc.objects
+from czsc import Direction
+if bi.direction == Direction.Up:
+    pass  # 上升笔
+if bi.direction == Direction.Down:
+    pass  # 下降笔
+```
+
+## RawBar 构造
+
+```python
+from czsc import RawBar, Freq
+import pandas as pd
+
+bar = RawBar(
+    symbol="600519.SH",
+    dt=pd.Timestamp("2026-03-20 10:30:00"),
+    id=0,              # 序号（int）
+    freq=Freq.F60,
+    open=1800.0,
+    close=1820.0,
+    high=1825.0,
+    low=1795.0,
+    vol=12345,         # 成交量
+    amount=22000000.0, # 成交额
+)
+```
+
+## 中枢识别（手动实现）
+
+```python
+def find_zhongshu(bi_list):
+    """从笔列表中识别中枢，返回 (ZG, ZD) 或 None"""
+    if len(bi_list) < 3:
+        return None
+    for i in range(len(bi_list) - 2):
+        three = bi_list[i:i+3]
+        zg = min(bi.high for bi in three)  # 三笔最高点中的最低
+        zd = max(bi.low for bi in three)   # 三笔最低点中的最高
+        if zg > zd:
+            return (zg, zd)
+    return None
+```
+
+## 已知 Bug 绕过方案（重要）
+
+数据获取**必须**通过 `core/data_provider.py`，原因：
+
+1. czsc 原生 `get_raw_bars` 对 F60 有 freq 枚举 bug
+2. `pro_bar_minutes` 的列名与 `format_kline` 期望的列名不匹配
+3. `Freq` 来自 Rust 扩展，不可哈希，不能用作 dict key
+
+```python
+# 始终用这个，不要绕过
+from core.data_provider import get_raw_bars
+bars = get_raw_bars("600519.SH#E", Freq.F60, "20250901", "20260319")
+```
