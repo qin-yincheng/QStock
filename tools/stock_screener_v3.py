@@ -214,6 +214,50 @@ class StockScreenerV3:
         else:
             return 5, atr_ratio
 
+    def compute_atr14(self, bars: list, length: int = 14) -> float:
+        """计算最新 ATR14 值"""
+        if len(bars) < length + 1:
+            return 0.0
+        highs = pd.Series([b.high for b in bars])
+        lows = pd.Series([b.low for b in bars])
+        closes = pd.Series([b.close for b in bars])
+        atr_s = ta.atr(highs, lows, closes, length=length)
+        if atr_s is None or atr_s.dropna().empty:
+            return 0.0
+        return float(atr_s.dropna().iloc[-1])
+
+    def compute_operation_params(self, price: float, atr: float) -> dict:
+        """基于 v8 策略参数计算止损/止盈操作价位"""
+        if atr <= 0 or price <= 0:
+            return {}
+        atr_stop_dist = 2.0 * atr / price
+        atr_stop_dist = max(atr_stop_dist, 0.03)
+        atr_stop_dist = min(atr_stop_dist, 0.08)
+
+        stop_loss_price = round(price * (1 - atr_stop_dist), 2)
+        stop_loss_pct = round(-atr_stop_dist * 100, 1)
+
+        tp_activate_dist = 1.5 * atr / price
+        tp_activate_price = round(price * (1 + tp_activate_dist), 2)
+        tp_trail_note = f"最高价回撤 1.0×ATR 卖出"
+
+        time_stop_bars = 40
+        bars_per_day = {"F15": 16, "F30": 8, "F60": 4}.get(
+            str(self.freq).split(".")[-1], 8
+        )
+        time_stop_days = round(time_stop_bars / bars_per_day, 1)
+
+        return {
+            "atr14": round(atr, 2),
+            "stop_loss_price": stop_loss_price,
+            "stop_loss_pct": stop_loss_pct,
+            "tp_activate_price": tp_activate_price,
+            "tp_activate_pct": round(tp_activate_dist * 100, 1),
+            "tp_trail_note": tp_trail_note,
+            "time_stop_bars": time_stop_bars,
+            "time_stop_days": time_stop_days,
+        }
+
     def analyze_signal(self, bars: list) -> dict:
         """调用 SignalEngine v3 获取融合信号"""
         from strategy.signal_engine import SignalEngine
@@ -255,7 +299,7 @@ class StockScreenerV3:
         return "淘汰"
 
     def screen(self, symbol: str, name: str = "") -> dict:
-        """筛选单只股票"""
+        """筛选单只股票，附带详细操作参数"""
         result = {
             "symbol": symbol.split("#")[0],
             "name": name,
@@ -270,8 +314,18 @@ class StockScreenerV3:
             "atr_ratio": 0.0,
             "chan_signal": "",
             "dragon_signal": "",
+            "chan_detail": "",
+            "dragon_detail": "",
             "reason": "",
             "data_source": "historical",
+            "op_params": {},
+            "ema5": None,
+            "ema10": None,
+            "dif": None,
+            "dea": None,
+            "bi_count": 0,
+            "last_bi_direction": None,
+            "filters": {},
         }
 
         try:
@@ -297,21 +351,36 @@ class StockScreenerV3:
             trend = self.check_trend(bars)
             result["trend"] = trend
 
-            # 3) 融合信号
+            # 3) 融合信号（保留完整详情）
             sig_result = self.analyze_signal(bars)
             signal = sig_result.get("final_signal", "HOLD")
             result["signal"] = signal
             result["confidence"] = sig_result.get("confidence", 0.0)
             result["chan_signal"] = sig_result.get("chan_signal", "")
             result["dragon_signal"] = sig_result.get("dragon_signal", "")
+            result["chan_detail"] = sig_result.get("chan_detail", "")
+            result["dragon_detail"] = sig_result.get("dragon_detail", "")
             result["data_source"] = sig_result.get("data_source", "historical")
+            result["ema5"] = sig_result.get("ema5")
+            result["ema10"] = sig_result.get("ema10")
+            result["dif"] = sig_result.get("dif")
+            result["dea"] = sig_result.get("dea")
+            result["bi_count"] = sig_result.get("bi_count", 0)
+            result["last_bi_direction"] = sig_result.get("last_bi_direction")
+            result["filters"] = sig_result.get("filters", {})
 
             # 4) 波动率适配
             vol_score, atr_ratio = self.compute_volatility_score(bars)
             result["volatility_score"] = vol_score
             result["atr_ratio"] = round(atr_ratio * 100, 2)
 
-            # 5) 综合评分
+            # 5) ATR 及操作参数
+            atr14 = self.compute_atr14(bars)
+            price = bars[-1].close
+            op_params = self.compute_operation_params(price, atr14)
+            result["op_params"] = op_params
+
+            # 6) 综合评分
             adx_score = self._score_adx(avg_adx)
             trend_score = self._score_trend(trend)
             signal_score = self._score_signal(signal)
@@ -363,14 +432,15 @@ class StockScreenerV3:
         results.sort(key=lambda x: (-x["score"], x["name"]))
         return results
 
-    def generate_report(self, results: list) -> str:
-        """生成 Markdown 格式的筛选报告"""
+    def generate_report(self, results: list, holdings: dict = None) -> str:
+        """生成 Markdown 格式的筛选报告（含操作参数和持仓建议）"""
+        holdings = holdings or {}
         recommended = [r for r in results if r["grade"] == "推荐"]
         watching = [r for r in results if r["grade"] == "关注"]
         eliminated = [r for r in results if r["grade"] == "淘汰"]
 
         lines = [
-            "# 选股工具 v3 筛选报告",
+            "# QStock 扫描报告 v5",
             "",
             f"> **生成时间**：{datetime.now().strftime('%Y-%m-%d %H:%M')}  ",
             f"> **股票池**：{len(results)} 只  ",
@@ -383,34 +453,88 @@ class StockScreenerV3:
         ]
 
         if recommended:
-            lines.append("## 推荐交易")
+            lines.append("## 📈 推荐交易")
             lines.append("")
-            lines.append("| # | 股票 | 得分 | ADX | 趋势 | 融合信号 | 仓位 | 缠论 | 双龙 | 波动率 | 信号时间 |")
-            lines.append("|---|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|------|")
             for i, r in enumerate(recommended, 1):
                 sig_dt = r.get("latest_dt", "")
-                lines.append(
-                    f"| {i} | {r['name']} | **{r['score']}** | {r['avg_adx']} | {r['trend']} "
-                    f"| {r['signal']} | {r['position_size']:.0%} "
-                    f"| {r['chan_signal']} | {r['dragon_signal']} | {r['atr_ratio']}% | {sig_dt} |"
-                )
-            lines.append("")
+                op = r.get("op_params", {})
+                price = r.get("latest_price", 0)
+                lines.append(f"### {i}. {r['name']} ({r['symbol']}) — {r['signal']}")
+                lines.append("")
+                lines.append(f"| 指标 | 值 |")
+                lines.append(f"|------|------|")
+                lines.append(f"| 得分 | **{r['score']}** |")
+                lines.append(f"| ADX | {r['avg_adx']} |")
+                lines.append(f"| 趋势 | {r['trend']} |")
+                lines.append(f"| 融合信号 | {r['signal']} (置信度 {r['confidence']:.0%}) |")
+                lines.append(f"| 建议仓位 | {r['position_size']:.0%} |")
+                lines.append(f"| 缠论 | {r['chan_signal']} |")
+                lines.append(f"| 双龙 | {r['dragon_signal']} |")
+                lines.append(f"| 波动率 | {r['atr_ratio']}% |")
+                lines.append(f"| 信号时间 | {sig_dt} |")
+                lines.append("")
+                chan_detail = r.get("chan_detail", "")
+                if chan_detail:
+                    lines.append(f"**缠论结构**：{chan_detail}")
+                    lines.append("")
+                dragon_detail = r.get("dragon_detail", "")
+                if dragon_detail:
+                    lines.append(f"**双龙状态**：{dragon_detail}")
+                    lines.append("")
+                if op and op.get("atr14"):
+                    lines.append("**操作参数（v8 策略）**：")
+                    lines.append("")
+                    lines.append(f"| 参数 | 值 |")
+                    lines.append(f"|------|------|")
+                    lines.append(f"| 当前价 | {price:.2f} |")
+                    lines.append(f"| ATR(14) | {op['atr14']} |")
+                    lines.append(f"| 止损价 | {op['stop_loss_price']} ({op['stop_loss_pct']}%) |")
+                    lines.append(f"| 止盈激活 | {op['tp_activate_price']} (+{op['tp_activate_pct']}%) |")
+                    lines.append(f"| 止盈回撤 | {op['tp_trail_note']} |")
+                    lines.append(f"| 时间止损 | {op['time_stop_bars']}根K线 (约{op['time_stop_days']}天) |")
+                    lines.append("")
+                holding = holdings.get(r["symbol"], {})
+                if holding and holding.get("buy_price"):
+                    bp = holding["buy_price"]
+                    pnl = (price - bp) / bp * 100 if bp > 0 else 0
+                    lines.append(f"**已持仓**：买入价 {bp}，浮盈 {pnl:+.1f}%")
+                else:
+                    if op and op.get("stop_loss_price"):
+                        lines.append(f"**未持仓**：可在 {price:.2f} 附近建仓 {r['position_size']:.0%}，严格止损 {op['stop_loss_price']}")
+                lines.append("")
 
         if watching:
-            lines.append("## 关注观察")
+            lines.append("## 👀 关注观察")
             lines.append("")
-            lines.append("| # | 股票 | 得分 | ADX | 趋势 | 信号 | 缠论 | 双龙 | 信号时间 |")
-            lines.append("|---|------|:---:|:---:|:---:|:---:|:---:|:---:|------|")
             for i, r in enumerate(watching, 1):
                 sig_dt = r.get("latest_dt", "")
-                lines.append(
-                    f"| {i} | {r['name']} | {r['score']} | {r['avg_adx']} | {r['trend']} "
-                    f"| {r['signal']} | {r['chan_signal']} | {r['dragon_signal']} | {sig_dt} |"
-                )
-            lines.append("")
+                op = r.get("op_params", {})
+                price = r.get("latest_price", 0)
+                lines.append(f"### {i}. {r['name']} ({r['symbol']}) — {r['signal']}")
+                lines.append("")
+                lines.append(f"得分 {r['score']} | ADX {r['avg_adx']} | 趋势 {r['trend']} | 信号时间 {sig_dt}")
+                lines.append("")
+                chan_detail = r.get("chan_detail", "")
+                if chan_detail:
+                    lines.append(f"缠论结构：{chan_detail}")
+                    lines.append("")
+                holding = holdings.get(r["symbol"], {})
+                if holding and holding.get("buy_price"):
+                    bp = holding["buy_price"]
+                    pnl = (price - bp) / bp * 100 if bp > 0 else 0
+                    if r["signal"] in ("SELL_ALL", "SELL", "REDUCE"):
+                        lines.append(f"⚠️ **已持仓**（买入价 {bp}，浮盈 {pnl:+.1f}%）→ 建议执行卖出信号")
+                    else:
+                        lines.append(f"已持仓（买入价 {bp}，浮盈 {pnl:+.1f}%）→ 继续持有观察")
+                else:
+                    if r["signal"] in ("SELL_ALL", "SELL", "REDUCE"):
+                        lines.append("未持仓 → 不操作，等待买入机会")
+                    else:
+                        lines.append("未持仓 → 继续观察，等待信号明确")
+                lines.append("")
 
         if eliminated:
-            lines.append("## 淘汰")
+            lines.append("## ❌ 淘汰")
             lines.append("")
             lines.append("| 股票 | ADX | 原因 |")
             lines.append("|------|:---:|------|")
@@ -422,13 +546,14 @@ class StockScreenerV3:
             "---",
             "",
             "**策略说明**：",
-            "- 使用缠论+双龙融合策略（fused, v7.2 参数）",
-            "- v7.2 参数：lookback=5, 止损-5%, 启动止盈+5%, 回撤止盈3%, 时间止损40K线, 连亏限制3次",
+            "- 使用缠论+双龙融合策略（fused, v8 参数）",
+            "- ATR自适应止损：2.0×ATR（下限-3%，上限-8%）",
+            "- 移动止盈：1.5×ATR激活，1.0×ATR回撤卖出",
+            "- 时间止损：持仓超过40根K线仍亏损则退出",
             "- 仓位按信号强度：STRONG_BUY 40% / BUY 30% / BUY_EARLY 20%",
             "- ADX < 20 的弱势股自动淘汰",
             "",
-            "*选股规则版本：v3（基于 Step 7 全部优化成果）*  ",
-            "*免责声明：选股结果仅供参考，不构成投资建议。*",
+            "*⚠️ 免责声明：扫描结果仅供参考，不构成投资建议。A股T+1制度，买入当天不能卖出。*",
         ])
 
         return "\n".join(lines)

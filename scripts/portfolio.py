@@ -1,5 +1,5 @@
 """
-股票池管理脚本 — 自选股增删改查 + 批量诊断 + 批量回测
+股票池管理脚本 — 自选股增删改查 + 持仓管理 + 批量诊断 + 批量回测
 
 用法：
   python scripts/portfolio.py --action list                              # 查看自选池
@@ -8,6 +8,9 @@
   python scripts/portfolio.py --action diagnose                          # 对自选池运行信号分析
   python scripts/portfolio.py --action backtest-all                      # 对自选池批量回测
   python scripts/portfolio.py --action diagnose --freq F60               # 使用 60 分钟频率
+  python scripts/portfolio.py --action update-holding --symbol 300750.SZ --buy-price 195.5 --shares 500
+  python scripts/portfolio.py --action clear-holding --symbol 300750.SZ
+  python scripts/portfolio.py --action holdings                          # 查看所有持仓
 """
 
 import sys
@@ -53,17 +56,21 @@ def action_list(data: dict):
         print("  自选池为空。使用 --action add --symbol XXX 添加股票。")
         return
 
+    held = [s for s in stocks if s.get("holding")]
     print("=" * 70)
-    print(f"  自选股票池（{len(stocks)} 只）")
+    print(f"  自选股票池（{len(stocks)} 只，持仓 {len(held)} 只）")
     print(f"  最后更新: {data.get('updated_at', '未知')}")
     print("=" * 70)
     print()
-    print(f"  {'#':>3}  {'代码':10s}  {'名称':8s}  {'加入日期':12s}  {'原因'}")
-    print(f"  {'---':>3}  {'----------':10s}  {'--------':8s}  {'----------':12s}  {'----'}")
+    print(f"  {'#':>3}  {'代码':10s}  {'名称':8s}  {'持仓':6s}  {'买入价':8s}  {'数量':6s}  {'加入日期':12s}")
+    print(f"  {'---':>3}  {'----------':10s}  {'--------':8s}  {'------':6s}  {'--------':8s}  {'------':6s}  {'----------':12s}")
     for i, s in enumerate(stocks, 1):
+        hold_flag = "✅" if s.get("holding") else "—"
+        bp = f"{s['buy_price']:.2f}" if s.get("buy_price") else "—"
+        shares = str(s.get("shares", "")) if s.get("shares") else "—"
         print(
             f"  {i:3d}  {s['symbol']:10s}  {s.get('name', ''):8s}  "
-            f"{s.get('added_date', ''):12s}  {s.get('add_reason', '')[:40]}"
+            f"{hold_flag:6s}  {bp:8s}  {shares:6s}  {s.get('added_date', ''):12s}"
         )
     print()
 
@@ -106,6 +113,105 @@ def action_remove(data: dict, symbol: str):
     save_portfolio(data)
     print(f"  [OK] 已移除: {symbol}")
     print(f"  当前自选池: {len(stocks)} 只")
+
+
+def action_update_holding(
+    data: dict, symbol: str, buy_price: float,
+    shares: int = 0, note: str = "",
+):
+    """更新持仓信息（买入记录）"""
+    stocks = data.get("stocks", [])
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    found = False
+    for s in stocks:
+        if s["symbol"] == symbol:
+            s["holding"] = True
+            s["buy_price"] = buy_price
+            s["buy_date"] = now_str
+            if shares > 0:
+                s["shares"] = shares
+            if note:
+                s["holding_note"] = note
+            found = True
+            break
+
+    if not found:
+        entry = {
+            "symbol": symbol,
+            "name": symbol,
+            "added_date": datetime.now().strftime("%Y-%m-%d"),
+            "add_reason": "通过持仓更新自动添加",
+            "holding": True,
+            "buy_price": buy_price,
+            "buy_date": now_str,
+            "shares": shares if shares > 0 else 0,
+        }
+        if note:
+            entry["holding_note"] = note
+        stocks.append(entry)
+        data["stocks"] = stocks
+
+    save_portfolio(data)
+    name = next((s.get("name", symbol) for s in stocks if s["symbol"] == symbol), symbol)
+    print(f"  [OK] 已更新持仓: {name} ({symbol})")
+    print(f"       买入价={buy_price}  数量={shares if shares > 0 else '未指定'}")
+
+
+def action_clear_holding(data: dict, symbol: str, sell_price: float = 0):
+    """清除持仓（卖出记录）"""
+    stocks = data.get("stocks", [])
+    found = False
+    for s in stocks:
+        if s["symbol"] == symbol:
+            name = s.get("name", symbol)
+            old_price = s.get("buy_price", 0)
+            buy_date = s.get("buy_date", "未知")
+            sell_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+            if sell_price > 0 and old_price > 0:
+                pnl = (sell_price - old_price) / old_price * 100
+                print(f"  本次交易: 买入{old_price}({buy_date}) → 卖出{sell_price}({sell_time})")
+                print(f"  盈亏: {pnl:+.1f}%")
+            s["holding"] = False
+            s.pop("buy_price", None)
+            s.pop("buy_date", None)
+            s.pop("shares", None)
+            s.pop("holding_note", None)
+            found = True
+            break
+
+    if not found:
+        print(f"  [WARN] {symbol} 不在自选池中。")
+        return
+
+    save_portfolio(data)
+    print(f"  [OK] 已清除持仓: {name} ({symbol})")
+
+
+def action_holdings(data: dict):
+    """查看所有持仓"""
+    stocks = data.get("stocks", [])
+    held = [s for s in stocks if s.get("holding") and s.get("buy_price")]
+
+    if not held:
+        print("  当前无持仓记录。")
+        print("  使用 --action update-holding --symbol XXX --buy-price YYY 记录买入。")
+        return
+
+    print("=" * 70)
+    print(f"  当前持仓（{len(held)} 只）")
+    print("=" * 70)
+    print()
+    print(f"  {'#':>3}  {'代码':10s}  {'名称':8s}  {'买入价':8s}  {'数量':6s}  {'买入日期':12s}  {'备注'}")
+    print(f"  {'---':>3}  {'----------':10s}  {'--------':8s}  {'--------':8s}  {'------':6s}  {'----------':12s}  {'----'}")
+    for i, s in enumerate(held, 1):
+        bp = f"{s['buy_price']:.2f}" if s.get("buy_price") else "—"
+        shares = str(s.get("shares", "")) if s.get("shares") else "—"
+        note = s.get("holding_note", "")[:30]
+        print(
+            f"  {i:3d}  {s['symbol']:10s}  {s.get('name', ''):8s}  "
+            f"{bp:8s}  {shares:6s}  {s.get('buy_date', ''):12s}  {note}"
+        )
+    print()
 
 
 def action_diagnose(data: dict, freq_key: str = "F30"):
@@ -204,15 +310,22 @@ def action_backtest_all(data: dict, freq_key: str = "F30"):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="QStock 自选股票池管理")
+    parser = argparse.ArgumentParser(description="QStock 自选股票池管理 + 持仓管理")
     parser.add_argument(
         "--action", required=True,
-        choices=["list", "add", "remove", "diagnose", "backtest-all"],
+        choices=[
+            "list", "add", "remove", "diagnose", "backtest-all",
+            "update-holding", "clear-holding", "holdings",
+        ],
         help="操作类型",
     )
-    parser.add_argument("--symbol", default=None, help="股票代码（add/remove 时必填）")
+    parser.add_argument("--symbol", default=None, help="股票代码（add/remove/holding 时必填）")
     parser.add_argument("--name", default="", help="股票名称（add 时可选）")
     parser.add_argument("--reason", default="", help="添加原因（add 时可选）")
+    parser.add_argument("--buy-price", type=float, default=0, help="买入价格（update-holding 时必填）")
+    parser.add_argument("--sell-price", type=float, default=0, help="卖出价格（clear-holding 时可选，用于计算盈亏）")
+    parser.add_argument("--shares", type=int, default=0, help="持股数量（update-holding 时可选）")
+    parser.add_argument("--note", default="", help="持仓备注（update-holding 时可选）")
     parser.add_argument(
         "--freq", default="F30", choices=["F15", "F30", "F60"],
         help="K线频率（默认 F30）",
@@ -233,6 +346,18 @@ def main():
             print("  错误: --action remove 需要 --symbol 参数")
             return
         action_remove(data, args.symbol)
+    elif args.action == "update-holding":
+        if not args.symbol or args.buy_price <= 0:
+            print("  错误: --action update-holding 需要 --symbol 和 --buy-price 参数")
+            return
+        action_update_holding(data, args.symbol, args.buy_price, args.shares, args.note)
+    elif args.action == "clear-holding":
+        if not args.symbol:
+            print("  错误: --action clear-holding 需要 --symbol 参数")
+            return
+        action_clear_holding(data, args.symbol, args.sell_price)
+    elif args.action == "holdings":
+        action_holdings(data)
     elif args.action == "diagnose":
         action_diagnose(data, args.freq)
     elif args.action == "backtest-all":

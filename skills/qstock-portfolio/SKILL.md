@@ -24,12 +24,18 @@ metadata:
     {
       "symbol": "300750.SZ",
       "name": "宁德时代",
-      "added_date": "2026-03-20"
+      "added_date": "2026-03-20",
+      "holding": true,
+      "buy_price": 195.50,
+      "buy_date": "2026-03-21",
+      "shares": 500
     }
   ],
   "updated_at": "2026-03-25T15:01:00"
 }
 ```
+
+> **持仓信息**：`holding`/`buy_price`/`shares`/`buy_date` 字段用于记录持仓状态。未持仓的股票没有这些字段或 `holding: false`。持仓管理详见 `qstock-holding` 技能。
 
 ## 可用操作
 
