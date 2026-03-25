@@ -8,9 +8,18 @@
 - 注意：czsc 的 Freq 来自 rs_czsc（Rust 扩展），不可哈希，不能作为 dict key，
   因此使用 str(freq) 做字符串匹配。
 """
+
+import os
 import pandas as pd
+import tushare as ts
+import czsc
 from czsc import RawBar, Freq
 from typing import List
+
+# 优先使用环境变量 TUSHARE_TOKEN，未设置时使用默认值
+TS_TOKEN = os.environ.get("TUSHARE_TOKEN", "810cafd073d3dafa10a68b9fecfb61c291e65e63cfad68503d3b10cf")
+ts.set_token(TS_TOKEN)
+czsc.set_url_token(TS_TOKEN, "http://api.tushare.pro")
 
 # Freq 来自 rs_czsc Rust 扩展，不可哈希，用 str(Freq) 的值做映射
 _MINUTE_FREQ_MAP = {
@@ -48,8 +57,9 @@ def _to_tushare_daily_freq(freq: Freq) -> str:
     return ts_freq
 
 
-def get_raw_bars(symbol: str, freq: Freq, sdt: str, edt: str,
-                 fq: str = "前复权") -> List[RawBar]:
+def get_raw_bars(
+    symbol: str, freq: Freq, sdt: str, edt: str, fq: str = "前复权"
+) -> List[RawBar]:
     """
     统一获取 K 线数据（RawBar 列表）
 
@@ -64,7 +74,11 @@ def get_raw_bars(symbol: str, freq: Freq, sdt: str, edt: str,
         List[RawBar]
     """
     if "#" not in symbol:
-        asset = "I" if symbol.startswith(("000", "399")) and symbol.endswith((".SH", ".SZ")) else "E"
+        asset = (
+            "I"
+            if symbol.startswith(("000", "399")) and symbol.endswith((".SH", ".SZ"))
+            else "E"
+        )
         symbol = f"{symbol}#{asset}"
 
     ts_code, asset = symbol.split("#")
@@ -76,8 +90,9 @@ def get_raw_bars(symbol: str, freq: Freq, sdt: str, edt: str,
         return _get_daily_bars(ts_code, asset, freq, sdt, edt, adj)
 
 
-def _get_minute_bars(ts_code: str, asset: str, freq: Freq,
-                     sdt: str, edt: str, adj: str) -> List[RawBar]:
+def _get_minute_bars(
+    ts_code: str, asset: str, freq: Freq, sdt: str, edt: str, adj: str
+) -> List[RawBar]:
     """获取分钟级别 K 线，绕过 czsc 的两个 bug：
     1. freq 枚举转换 bug（"60min" vs "60分钟"）
     2. pro_bar_minutes 输出列名与 format_kline 不匹配
@@ -86,7 +101,9 @@ def _get_minute_bars(ts_code: str, asset: str, freq: Freq,
     from czsc.connectors.ts_connector import pro_bar_minutes
 
     ts_freq = _to_tushare_minute_freq(freq)
-    kline = pro_bar_minutes(ts_code, sdt=sdt, edt=edt, freq=ts_freq, asset=asset, adj=adj)
+    kline = pro_bar_minutes(
+        ts_code, sdt=sdt, edt=edt, freq=ts_freq, asset=asset, adj=adj
+    )
 
     if kline is None or kline.empty:
         print(f"警告: {ts_code} {ts_freq} 未获取到数据")
@@ -111,16 +128,18 @@ def _get_minute_bars(ts_code: str, asset: str, freq: Freq,
     return bars
 
 
-def _get_daily_bars(ts_code: str, asset: str, freq: Freq,
-                    sdt: str, edt: str, adj: str) -> List[RawBar]:
+def _get_daily_bars(
+    ts_code: str, asset: str, freq: Freq, sdt: str, edt: str, adj: str
+) -> List[RawBar]:
     """获取日线及以上级别 K 线"""
     import tushare as ts
     from czsc.connectors.ts_connector import format_kline
 
     ts_freq = _to_tushare_daily_freq(freq)
 
-    kline = ts.pro_bar(ts_code, start_date=sdt, end_date=edt,
-                       freq=ts_freq, asset=asset, adj=adj)
+    kline = ts.pro_bar(
+        ts_code, start_date=sdt, end_date=edt, freq=ts_freq, asset=asset, adj=adj
+    )
 
     if kline is None or kline.empty:
         print(f"警告: {ts_code} {ts_freq} 未获取到数据")
@@ -130,8 +149,9 @@ def _get_daily_bars(ts_code: str, asset: str, freq: Freq,
     return bars
 
 
-def get_realtime_bars(symbol: str, freq: Freq = Freq.F60,
-                      history_months: int = 6) -> List[RawBar]:
+def get_realtime_bars(
+    symbol: str, freq: Freq = Freq.F60, history_months: int = 6
+) -> List[RawBar]:
     """
     实战盘中用：获取历史数据
     Tushare 盘中数据有一定延迟但可用

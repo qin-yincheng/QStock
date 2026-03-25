@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 数据缓存（Tushare 下载的 parquet/pkl 文件）
+.cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# ===== 私密 / 不上传 =====
+导师需求.md
+
+# ===== 龙虾平台旧版技能（已被 skills/qstock-* 替代） =====
+skills/龙虾生成/
+
+# ===== 实验性脚本（第 6~9 阶段验证用，非核心功能） =====
+scripts/ab_compare.py
+scripts/optimize.py
+scripts/strategy_compare.py
+scripts/validate_daily_trend.py
+scripts/validate_freq.py
+scripts/validate_v8.py
+run_optimize.ps1
+
+# ===== 实验性文档和结果（历史实验产物，不影响核心功能） =====
+docs/ab_compare_report.md
+docs/ab_compare_results.csv
+docs/daily_trend_report.md
+docs/daily_trend_results.csv
+docs/optimize_report.md
+docs/optimize_log.txt
+docs/optimize_results.csv
+docs/optimize_results_validation.csv
+docs/scan_report.md
+docs/v8_*.csv
+docs/策略优化指南.md
+docs/策略分组分析报告.md
+docs/策略对比回测结果.csv
+docs/策略对比回测结果.md
+docs/策略收益提升方案.md
+docs/freq_compare_results.csv

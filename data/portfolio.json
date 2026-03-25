@@ -1,0 +1,15 @@
+{
+  "stocks": [
+    {"symbol": "600519.SH", "name": "贵州茅台", "added_date": "2026-03-25", "add_reason": "白酒龙头，趋势跟随标的"},
+    {"symbol": "300750.SZ", "name": "宁德时代", "added_date": "2026-03-25", "add_reason": "新能源龙头，高波动适合趋势策略"},
+    {"symbol": "002594.SZ", "name": "比亚迪", "added_date": "2026-03-25", "add_reason": "新能源汽车龙头"},
+    {"symbol": "600036.SH", "name": "招商银行", "added_date": "2026-03-25", "add_reason": "银行龙头，稳健标的"},
+    {"symbol": "601318.SH", "name": "中国平安", "added_date": "2026-03-25", "add_reason": "保险龙头"},
+    {"symbol": "000858.SZ", "name": "五粮液", "added_date": "2026-03-25", "add_reason": "白酒二线龙头"},
+    {"symbol": "300059.SZ", "name": "东方财富", "added_date": "2026-03-25", "add_reason": "券商互联网龙头"},
+    {"symbol": "600900.SH", "name": "长江电力", "added_date": "2026-03-25", "add_reason": "公用事业龙头，防守标的"},
+    {"symbol": "601012.SH", "name": "隆基绿能", "added_date": "2026-03-25", "add_reason": "光伏龙头"},
+    {"symbol": "000001.SZ", "name": "平安银行", "added_date": "2026-03-25", "add_reason": "银行板块代表"}
+  ],
+  "updated_at": "2026-03-25T12:00:00"
+}
