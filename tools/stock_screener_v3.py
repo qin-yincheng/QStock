@@ -44,6 +44,23 @@ SIGNAL_SCORE = {
     "REDUCE": -10,
 }
 
+CHAN_SIGNAL_CN = {
+    "SELL_1": "一类卖点", "SELL_2": "二类卖点", "SELL_3": "三类卖点",
+    "SELL_5BI": "五笔卖点", "SELL_DZS": "双中枢看空",
+    "SELL_TREND": "趋势跟随卖点", "SELL_DIV": "顶背驰",
+    "BUY_1": "一类买点", "BUY_2": "二类买点", "BUY_3": "三类买点",
+    "BUY_5BI": "五笔买点", "BUY_DZS": "双中枢看多",
+    "BUY_TREND": "趋势跟随买点", "BUY_DIV": "底背驰",
+}
+
+TREND_CN = {"up": "上升趋势", "down": "下降趋势", "sideways": "横盘震荡"}
+
+SIGNAL_CN = {
+    "STRONG_BUY": "强烈买入", "BUY": "买入", "BUY_EARLY": "早期买入",
+    "BUY_WATCH": "观察", "WAIT_CONFIRM": "等待确认",
+    "SELL_ALL": "卖出(全)", "SELL": "卖出", "REDUCE": "减仓", "HOLD": "持仓等待",
+}
+
 DEFAULT_POOL = [
     # --- v2 原有 24 只 ---
     ("002594.SZ#E", "比亚迪"),
@@ -298,6 +315,40 @@ class StockScreenerV3:
             return "关注"
         return "淘汰"
 
+    def _build_readable_reason(self, r: dict) -> str:
+        """从结果字段生成人类可读的淘汰/分级原因"""
+        reason = r.get("reason", "")
+        if "弱势" in reason or "数据不足" in reason or "错误" in reason:
+            return reason
+
+        signal = r.get("signal", "HOLD")
+        trend = r.get("trend", "unknown")
+        chan_signal = r.get("chan_signal", "")
+
+        trend_cn = TREND_CN.get(trend, "趋势不明")
+        chan_cn = CHAN_SIGNAL_CN.get(chan_signal, "")
+
+        if signal == "SELL_ALL":
+            sell_label = chan_cn or "缠论卖点"
+            if trend == "up":
+                return f"{sell_label}抵消上升趋势"
+            elif trend == "sideways":
+                return f"横盘震荡 + {sell_label}"
+            else:
+                return f"下降趋势 + {sell_label}"
+        elif signal == "REDUCE":
+            return f"双龙死叉减仓 + {trend_cn}"
+        elif signal == "HOLD":
+            if trend == "down":
+                return "下降趋势 + 无买入信号"
+            elif trend == "sideways":
+                return "横盘震荡 + 无买入信号"
+            return "无明确信号"
+        elif signal in ("WAIT_CONFIRM", "BUY_WATCH", "BUY_EARLY"):
+            sig_cn = SIGNAL_CN.get(signal, signal)
+            return f"{trend_cn} + 信号较弱({sig_cn})"
+        return f"{trend_cn} + 得分不足"
+
     def screen(self, symbol: str, name: str = "") -> dict:
         """筛选单只股票，附带详细操作参数"""
         result = {
@@ -393,13 +444,14 @@ class StockScreenerV3:
             # 仓位映射
             result["position_size"] = POSITION_MAP.get(signal, 0.0)
 
-            # 理由
+            # 理由（评分明细 + 可读原因）
             parts = []
             parts.append(f"ADX={avg_adx:.1f}({adx_score}分)")
             parts.append(f"趋势={trend}({trend_score}分)")
             parts.append(f"信号={signal}({signal_score}分)")
             parts.append(f"波动率={atr_ratio*100:.1f}%({vol_score}分)")
             result["reason"] = " | ".join(parts)
+            result["readable_reason"] = self._build_readable_reason(result)
 
             return result
 
@@ -424,7 +476,8 @@ class StockScreenerV3:
             elif grade == "关注":
                 print(f"-- 关注 ({score}分) 信号:{result['signal']}")
             else:
-                print(f"   淘汰 ({score}分) {result['reason'][:50]}")
+                readable = result.get("readable_reason", result["reason"][:50])
+                print(f"   淘汰 ({score}分) {readable}")
 
             if i < len(pool):
                 time.sleep(sleep_sec)
@@ -534,13 +587,58 @@ class StockScreenerV3:
                 lines.append("")
 
         if eliminated:
-            lines.append("## ❌ 淘汰")
+            lines.append(f"## ❌ 淘汰（{len(eliminated)} 只）")
             lines.append("")
-            lines.append("| 股票 | ADX | 原因 |")
-            lines.append("|------|:---:|------|")
-            for r in eliminated:
-                lines.append(f"| {r['name']} | {r['avg_adx']} | {r['reason'][:60]} |")
-            lines.append("")
+            for i, r in enumerate(eliminated, 1):
+                sig_cn = SIGNAL_CN.get(r["signal"], r["signal"])
+                readable = r.get("readable_reason", r["reason"][:60])
+                lines.append(f"### {i}. {r['name']} ({r['symbol']}) — {sig_cn}")
+                lines.append("")
+                lines.append(
+                    f"得分 {r['score']} | ADX {r['avg_adx']} | "
+                    f"趋势 {r['trend']} | **淘汰原因：{readable}**"
+                )
+                lines.append("")
+                chan_detail = r.get("chan_detail", "")
+                if chan_detail:
+                    lines.append(f"缠论结构：{chan_detail}")
+                    lines.append("")
+                dragon_detail = r.get("dragon_detail", "")
+                if dragon_detail:
+                    lines.append(f"双龙状态：{dragon_detail}")
+                    lines.append("")
+                elif r.get("ema5") is not None and r.get("ema10") is not None:
+                    ema5, ema10 = r["ema5"], r["ema10"]
+                    dif, dea = r.get("dif"), r.get("dea")
+                    ema_st = "多头" if ema5 > ema10 else "空头"
+                    macd_st = "多头" if (dif and dea and dif > dea) else "空头"
+                    lines.append(
+                        f"双龙状态：EMA5={ema5} {'>' if ema5 > ema10 else '<'} "
+                        f"EMA10={ema10} ({ema_st}), "
+                        f"DIF {'>' if dif and dea and dif > dea else '<'} DEA ({macd_st})"
+                    )
+                    lines.append("")
+                holding = holdings.get(r["symbol"], {})
+                if holding and holding.get("buy_price"):
+                    bp = holding["buy_price"]
+                    price = r.get("latest_price", 0)
+                    pnl = (price - bp) / bp * 100 if bp > 0 else 0
+                    if r["signal"] in ("SELL_ALL", "SELL", "REDUCE"):
+                        lines.append(
+                            f"⚠️ **已持仓**（买入价 {bp}，浮盈 {pnl:+.1f}%）"
+                            f"→ 建议执行卖出信号"
+                        )
+                    else:
+                        lines.append(
+                            f"已持仓（买入价 {bp}，浮盈 {pnl:+.1f}%）"
+                            f"→ 建议关注风险"
+                        )
+                else:
+                    if r["signal"] in ("SELL_ALL", "SELL", "REDUCE"):
+                        lines.append("未持仓 → 不操作，等待后续回调企稳后的买入机会")
+                    else:
+                        lines.append("未持仓 → 不操作，条件不足暂不关注")
+                lines.append("")
 
         lines.extend([
             "---",

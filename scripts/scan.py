@@ -239,6 +239,33 @@ def scan(
                 print(line)
         print()
 
+    if eliminated:
+        print("  【淘汰股票】")
+        for r in eliminated:
+            sig_cn = SIGNAL_CN.get(r["signal"], r["signal"])
+            readable = r.get("readable_reason", r.get("reason", "")[:50])
+            print(
+                f"     {r['name']:8s} ({r['symbol']}): "
+                f"{sig_cn} | 原因: {readable}"
+            )
+            chan_detail = r.get("chan_detail", "")
+            if chan_detail:
+                print(f"       缠论: {chan_detail}")
+            dragon_detail = r.get("dragon_detail", "")
+            if dragon_detail:
+                print(f"       双龙: {dragon_detail}")
+            elif r.get("ema5") is not None and r.get("ema10") is not None:
+                ema5, ema10 = r["ema5"], r["ema10"]
+                dif, dea = r.get("dif"), r.get("dea")
+                ema_st = "多头" if ema5 > ema10 else "空头"
+                macd_st = "多头" if (dif and dea and dif > dea) else "空头"
+                print(
+                    f"       双龙: EMA5={ema5} {'>' if ema5 > ema10 else '<'} "
+                    f"EMA10={ema10} ({ema_st}), "
+                    f"DIF {'>' if dif and dea and dif > dea else '<'} DEA ({macd_st})"
+                )
+        print()
+
     if not recommended and not watching:
         print()
         print("  当前无推荐或关注标的，建议观望。")
