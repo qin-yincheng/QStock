@@ -45,22 +45,37 @@ cd {baseDir}/../../ && python scripts/portfolio.py --action update-holding --sym
 
 > 如果股票不在自选池中，会自动添加到自选池。
 
-### 2. 记录卖出（清除持仓）
+### 2. 记录卖出
 
-当用户说"卖了XX"、"清仓了XX"、"卖出XX元"时：
+当用户说"卖了XX"、"清仓了XX"、"卖出XX元"、"减仓一半"时：
 
+**全部清仓**（不指定 `--shares` 或 `--shares` >= 持仓总量）：
 ```bash
 cd {baseDir}/../../ && python scripts/portfolio.py --action clear-holding --symbol {代码} --sell-price {卖出价格}
 ```
 
+**部分卖出**（指定 `--shares` < 持仓总量）：
+```bash
+cd {baseDir}/../../ && python scripts/portfolio.py --action clear-holding --symbol {代码} --sell-price {卖出价格} --shares {卖出数量}
+```
+
 **参数说明**：
 - `--symbol`：股票代码（必填）
-- `--sell-price`：卖出价格（可选），提供后会自动计算本次交易盈亏
+- `--sell-price`：卖出价格（可选），提供后自动计算盈亏比例和盈亏金额
+- `--shares`：卖出数量（可选），不填或填 0 表示全部清仓
 
 **示例**：
 ```bash
+# 全部清仓
 cd {baseDir}/../../ && python scripts/portfolio.py --action clear-holding --symbol 300750.SZ --sell-price 210.30
+# 部分卖出 200 股（持仓 500 股中）
+cd {baseDir}/../../ && python scripts/portfolio.py --action clear-holding --symbol 300750.SZ --sell-price 210.30 --shares 200
 ```
+
+**盈亏计算**：
+- 盈亏比例 = (卖出价 - 买入价) / 买入价 × 100%
+- 盈亏金额 = (卖出价 - 买入价) × 卖出股数
+- 部分卖出后剩余股数继续持仓，买入价不变
 
 ### 3. 查看所有持仓
 
@@ -97,15 +112,19 @@ Agent：[调用 update-holding --symbol 300750.SZ --buy-price 195.50 --shares 50
 
 用户：宁德时代卖了，210块卖的
 Agent：[调用 clear-holding --symbol 300750.SZ --sell-price 210]
-→ 确认卖出，显示本次盈亏 +7.4%
+→ 确认全部清仓，显示盈亏比例 +7.4%，盈亏金额 +7,250 元
+
+用户：宁德时代先卖200股，210块
+Agent：[调用 clear-holding --symbol 300750.SZ --sell-price 210 --shares 200]
+→ 确认部分卖出 200 股，剩余 300 股继续持仓，显示本批盈亏 +2,900 元
+
+用户：减仓一半宁德时代，现价 205
+Agent：[先查持仓数量，假设 500 股，则卖 250 股]
+→ [调用 clear-holding --symbol 300750.SZ --sell-price 205 --shares 250]
 
 用户：我现在持有什么股票
 Agent：[调用 holdings]
 → 展示所有持仓列表
-
-用户：比亚迪我买了300股，302.8元
-Agent：[调用 update-holding --symbol 002594.SZ --buy-price 302.8 --shares 300]
-→ 确认记录
 
 用户：扫描一下我的自选池
 Agent：[使用 qstock-scanner 技能，扫描结果会自动显示持仓相关建议]

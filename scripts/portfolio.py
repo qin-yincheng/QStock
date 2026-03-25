@@ -9,7 +9,8 @@
   python scripts/portfolio.py --action backtest-all                      # 对自选池批量回测
   python scripts/portfolio.py --action diagnose --freq F60               # 使用 60 分钟频率
   python scripts/portfolio.py --action update-holding --symbol 300750.SZ --buy-price 195.5 --shares 500
-  python scripts/portfolio.py --action clear-holding --symbol 300750.SZ
+  python scripts/portfolio.py --action clear-holding --symbol 300750.SZ --sell-price 210 --shares 200  # 部分卖出
+  python scripts/portfolio.py --action clear-holding --symbol 300750.SZ --sell-price 210             # 全部清仓
   python scripts/portfolio.py --action holdings                          # 查看所有持仓
 """
 
@@ -157,34 +158,60 @@ def action_update_holding(
     print(f"       买入价={buy_price}  数量={shares if shares > 0 else '未指定'}")
 
 
-def action_clear_holding(data: dict, symbol: str, sell_price: float = 0):
-    """清除持仓（卖出记录）"""
+def action_clear_holding(
+    data: dict, symbol: str, sell_price: float = 0, sell_shares: int = 0,
+):
+    """清除或部分卖出持仓
+
+    sell_shares=0 或 >= 持仓总量时全部清仓，否则部分卖出。
+    """
     stocks = data.get("stocks", [])
     found = False
     for s in stocks:
         if s["symbol"] == symbol:
             name = s.get("name", symbol)
-            old_price = s.get("buy_price", 0)
+            buy_price = s.get("buy_price", 0)
+            total_shares = s.get("shares", 0)
             buy_date = s.get("buy_date", "未知")
             sell_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-            if sell_price > 0 and old_price > 0:
-                pnl = (sell_price - old_price) / old_price * 100
-                print(f"  本次交易: 买入{old_price}({buy_date}) → 卖出{sell_price}({sell_time})")
-                print(f"  盈亏: {pnl:+.1f}%")
-            s["holding"] = False
-            s.pop("buy_price", None)
-            s.pop("buy_date", None)
-            s.pop("shares", None)
-            s.pop("holding_note", None)
+
+            is_partial = (
+                sell_shares > 0
+                and total_shares > 0
+                and sell_shares < total_shares
+            )
+            actual_sell = sell_shares if is_partial else total_shares
+
+            if sell_price > 0 and buy_price > 0:
+                pnl_pct = (sell_price - buy_price) / buy_price * 100
+                pnl_amount = (sell_price - buy_price) * actual_sell if actual_sell > 0 else 0
+                print(f"  本次交易: 买入{buy_price}({buy_date}) → 卖出{sell_price}({sell_time})")
+                print(f"  卖出数量: {actual_sell if actual_sell > 0 else '全部'}")
+                print(f"  盈亏比例: {pnl_pct:+.1f}%")
+                if actual_sell > 0:
+                    print(f"  盈亏金额: {pnl_amount:+,.0f} 元")
+
+            if is_partial:
+                remaining = total_shares - sell_shares
+                s["shares"] = remaining
+                print(f"  [OK] 部分卖出 {name} ({symbol}): 卖出 {sell_shares} 股, 剩余 {remaining} 股")
+                print(f"       买入价 {buy_price} 不变, 继续持仓")
+            else:
+                s["holding"] = False
+                s.pop("buy_price", None)
+                s.pop("buy_date", None)
+                s.pop("shares", None)
+                s.pop("holding_note", None)
+                print(f"  [OK] 已清仓: {name} ({symbol})")
+
             found = True
             break
 
     if not found:
-        print(f"  [WARN] {symbol} 不在自选池中。")
+        print(f"  [WARN] {symbol} 不在自选池中或无持仓记录。")
         return
 
     save_portfolio(data)
-    print(f"  [OK] 已清除持仓: {name} ({symbol})")
 
 
 def action_holdings(data: dict):
@@ -324,7 +351,7 @@ def main():
     parser.add_argument("--reason", default="", help="添加原因（add 时可选）")
     parser.add_argument("--buy-price", type=float, default=0, help="买入价格（update-holding 时必填）")
     parser.add_argument("--sell-price", type=float, default=0, help="卖出价格（clear-holding 时可选，用于计算盈亏）")
-    parser.add_argument("--shares", type=int, default=0, help="持股数量（update-holding 时可选）")
+    parser.add_argument("--shares", type=int, default=0, help="股数（update-holding: 买入数量; clear-holding: 卖出数量, 0=全部清仓）")
     parser.add_argument("--note", default="", help="持仓备注（update-holding 时可选）")
     parser.add_argument(
         "--freq", default="F30", choices=["F15", "F30", "F60"],
@@ -355,7 +382,7 @@ def main():
         if not args.symbol:
             print("  错误: --action clear-holding 需要 --symbol 参数")
             return
-        action_clear_holding(data, args.symbol, args.sell_price)
+        action_clear_holding(data, args.symbol, args.sell_price, args.shares)
     elif args.action == "holdings":
         action_holdings(data)
     elif args.action == "diagnose":
