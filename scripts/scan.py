@@ -246,7 +246,8 @@ def scan(
             readable = r.get("readable_reason", r.get("reason", "")[:50])
             print(
                 f"     {r['name']:8s} ({r['symbol']}): "
-                f"{sig_cn} | 原因: {readable}"
+                f"{sig_cn} | ADX={r['avg_adx']} | 趋势={r['trend']} | "
+                f"得分={r['score']} | 原因: {readable}"
             )
             chan_detail = r.get("chan_detail", "")
             if chan_detail:
